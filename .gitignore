@@ -10,3 +10,10 @@ x64/
 *.pdb
 *.ilk
 *.exe
+
+# SwiftPM / macOS
+.build/
+.swiftpm/
+DerivedData/
+dist/
+*.xcuserdata/
