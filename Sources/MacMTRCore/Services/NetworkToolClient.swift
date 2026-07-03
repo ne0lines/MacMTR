@@ -14,6 +14,7 @@ public enum NetworkToolError: Error, LocalizedError, Sendable {
 public protocol NetworkToolClient: Sendable {
     func traceRoute(to target: String, maxHops: Int) async throws -> [RouteHop]
     func traceRouteHops(to target: String, maxHops: Int) -> AsyncThrowingStream<RouteHop, Error>
+    func sampleHop(target: String, ttl: Int, timeoutMilliseconds: Int) async throws -> PingSample
     func ping(address: String, timeoutMilliseconds: Int) async throws -> PingSample
 }
 
@@ -178,6 +179,35 @@ public struct MacNetworkToolClient: NetworkToolClient {
         )
 
         return PingParser.parse(output.combinedOutput)
+    }
+
+    public func sampleHop(
+        target: String,
+        ttl: Int,
+        timeoutMilliseconds: Int = 1_000
+    ) async throws -> PingSample {
+        let waitSeconds = max(1, Int((Double(timeoutMilliseconds) / 1_000).rounded(.up)))
+        let output = try await runner.run(
+            executableURL: URL(fileURLWithPath: "/usr/sbin/traceroute"),
+            arguments: [
+                "-n",
+                "-q", "1",
+                "-f", String(ttl),
+                "-m", String(ttl),
+                "-w", String(waitSeconds),
+                target
+            ]
+        )
+
+        guard let hopLine = output.combinedOutput
+            .split(whereSeparator: \.isNewline)
+            .map(String.init)
+            .last(where: { TracerouteParser.parseLine($0)?.index == ttl })
+        else {
+            return PingSample(latencyMilliseconds: nil)
+        }
+
+        return TracerouteParser.parseSample(hopLine)
     }
 }
 

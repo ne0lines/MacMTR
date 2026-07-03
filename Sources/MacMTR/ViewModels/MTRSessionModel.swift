@@ -11,11 +11,11 @@ final class MTRSessionModel: ObservableObject {
     @Published private(set) var statusMessage = "Ready"
     @Published private(set) var reports: [HopReport] = []
 
-    private let client: any NetworkToolClient
+    private let runner: MTRSessionRunner
     private var runTask: Task<Void, Never>?
 
     init(client: any NetworkToolClient = MacNetworkToolClient()) {
-        self.client = client
+        self.runner = MTRSessionRunner(client: client)
     }
 
     var canExport: Bool {
@@ -71,38 +71,27 @@ final class MTRSessionModel: ObservableObject {
 
     private func run(target: String) async {
         do {
-            for try await hop in client.traceRouteHops(to: target, maxHops: maxHops) {
+            for try await event in runner.events(
+                target: target,
+                maxHops: maxHops,
+                intervalMilliseconds: intervalMilliseconds
+            ) {
                 guard !Task.isCancelled else { return }
-                appendHopIfNeeded(hop)
-                statusMessage = "Discovered \(reports.count) hops to \(target)..."
-            }
 
-            guard !Task.isCancelled else { return }
-            guard !reports.isEmpty else {
-                statusMessage = "No route found for \(target)."
-                isRunning = false
-                return
-            }
-
-            statusMessage = "Running \(reports.count) hops to \(target)."
-
-            while !Task.isCancelled {
-                let hops = reports.map(\.hop)
-                for hop in hops {
-                    guard !Task.isCancelled else { return }
-                    guard let address = hop.address else {
-                        record(PingSample(latencyMilliseconds: nil), forHopID: hop.id)
-                        continue
+                switch event {
+                case let .hopDiscovered(hop):
+                    appendHopIfNeeded(hop)
+                    statusMessage = "Discovered \(reports.count) hops to \(target)..."
+                case let .sampleRecorded(hopID, sample):
+                    record(sample, forHopID: hopID)
+                case let .routeCompleted(discoveredHopCount):
+                    if discoveredHopCount == 0 {
+                        statusMessage = "No route found for \(target)."
+                        isRunning = false
+                    } else {
+                        statusMessage = "Running \(discoveredHopCount) hops to \(target)."
                     }
-
-                    let sample = (try? await client.ping(
-                        address: address,
-                        timeoutMilliseconds: intervalMilliseconds
-                    )) ?? PingSample(latencyMilliseconds: nil)
-                    record(sample, forHopID: hop.id)
                 }
-
-                try await Task.sleep(nanoseconds: UInt64(intervalMilliseconds) * 1_000_000)
             }
         } catch {
             guard !Task.isCancelled else { return }

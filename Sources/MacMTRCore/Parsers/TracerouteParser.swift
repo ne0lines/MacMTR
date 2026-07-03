@@ -4,6 +4,10 @@ public enum TracerouteParser {
     private static let ipExpression = try! NSRegularExpression(
         pattern: #"(?:\b(?:\d{1,3}\.){3}\d{1,3}\b|[A-Fa-f0-9]{0,4}:[A-Fa-f0-9:]+)"#
     )
+    private static let latencyExpression = try! NSRegularExpression(
+        pattern: #"([0-9]+(?:\.[0-9]+)?)\s*ms"#,
+        options: [.caseInsensitive]
+    )
 
     public static func parse(_ output: String) -> [RouteHop] {
         output
@@ -28,6 +32,21 @@ public enum TracerouteParser {
         let address = firstIPAddress(in: remainder)
         let hostname = hostname(in: remainder, address: address)
         return RouteHop(index: index, address: address, hostname: hostname)
+    }
+
+    public static func parseSample(_ line: String) -> PingSample {
+        let range = NSRange(line.startIndex..<line.endIndex, in: line)
+
+        guard
+            let match = latencyExpression.firstMatch(in: line, range: range),
+            match.numberOfRanges > 1,
+            let valueRange = Range(match.range(at: 1), in: line),
+            let latency = Double(line[valueRange])
+        else {
+            return PingSample(latencyMilliseconds: nil)
+        }
+
+        return PingSample(latencyMilliseconds: latency)
     }
 
     private static func firstIPAddress(in text: String) -> String? {
