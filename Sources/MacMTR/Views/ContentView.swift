@@ -45,6 +45,29 @@ struct ContentView: View {
                     }
                 }
 
+            Menu {
+                ForEach(model.recentTargets, id: \.self) { target in
+                    Button(target) {
+                        model.selectRecentTarget(target)
+                    }
+                }
+
+                if !model.recentTargets.isEmpty {
+                    Divider()
+                    Button(role: .destructive) {
+                        model.clearRecentTargets()
+                    } label: {
+                        Label("Clear Recent Hosts", systemImage: "trash")
+                    }
+                }
+            } label: {
+                Label("Recent Hosts", systemImage: "clock")
+                    .labelStyle(.iconOnly)
+            }
+            .menuStyle(.borderlessButton)
+            .help("Recent hosts")
+            .disabled(model.isRunning || model.recentTargets.isEmpty)
+
             Stepper("Max hops: \(model.maxHops)", value: $model.maxHops, in: 1...64)
                 .frame(width: 140)
                 .disabled(model.isRunning)

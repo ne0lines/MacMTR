@@ -4,18 +4,27 @@ import MacMTRCore
 
 @MainActor
 final class MTRSessionModel: ObservableObject {
-    @Published var target = "github.com"
+    @Published var target: String
     @Published var maxHops = 30
     @Published var intervalMilliseconds = 1_000
     @Published private(set) var isRunning = false
     @Published private(set) var statusMessage = "Ready"
     @Published private(set) var reports: [HopReport] = []
+    @Published private(set) var recentTargets: [String]
 
     private let runner: MTRSessionRunner
+    private let recentTargetsStore: RecentTargetsStore
     private var runTask: Task<Void, Never>?
 
-    init(client: any NetworkToolClient = MacNetworkToolClient()) {
+    init(
+        client: any NetworkToolClient = MacNetworkToolClient(),
+        recentTargetsStore: RecentTargetsStore = RecentTargetsStore()
+    ) {
         self.runner = MTRSessionRunner(client: client)
+        self.recentTargetsStore = recentTargetsStore
+        let rememberedTargets = recentTargetsStore.load()
+        self.recentTargets = rememberedTargets
+        self.target = rememberedTargets.first ?? RecentTargetsStore.defaultTarget
     }
 
     var canExport: Bool {
@@ -30,6 +39,8 @@ final class MTRSessionModel: ObservableObject {
         }
 
         stop()
+        target = trimmedTarget
+        recentTargets = recentTargetsStore.remember(trimmedTarget)
         isRunning = true
         statusMessage = "Tracing route to \(trimmedTarget)..."
         reports = []
@@ -52,6 +63,17 @@ final class MTRSessionModel: ObservableObject {
         stop()
         reports = []
         statusMessage = "Ready"
+    }
+
+    func selectRecentTarget(_ target: String) {
+        guard !isRunning else { return }
+        self.target = target
+    }
+
+    func clearRecentTargets() {
+        guard !isRunning else { return }
+        recentTargetsStore.clear()
+        recentTargets = []
     }
 
     func copyTextReport() {
