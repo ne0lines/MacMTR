@@ -6,11 +6,6 @@
     {
       "layers" : [
         {
-          "fill" : {
-            "solid" : "extended-srgb:0.00000,0.53333,1.00000,1.00000"
-          },
-          "glass" : true,
-          "hidden" : false,
           "image-name" : "AppIconForeground.png",
           "name" : "AppIconForeground"
         }
