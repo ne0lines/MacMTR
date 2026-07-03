@@ -11,7 +11,7 @@ public enum TracerouteParser {
             .compactMap { parseLine(String($0)) }
     }
 
-    private static func parseLine(_ line: String) -> RouteHop? {
+    public static func parseLine(_ line: String) -> RouteHop? {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         guard
             let separator = trimmed.firstIndex(where: \.isWhitespace),

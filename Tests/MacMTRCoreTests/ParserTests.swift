@@ -19,6 +19,12 @@ final class ParserTests: XCTestCase {
         ])
     }
 
+    func testTracerouteParserParsesSingleStreamingHopLine() {
+        let hop = TracerouteParser.parseLine(" 1  192.168.1.1  1.234 ms")
+
+        XCTAssertEqual(hop, RouteHop(index: 1, address: "192.168.1.1", hostname: nil))
+    }
+
     func testPingParserExtractsLatencyAndTimeout() {
         let reply = "64 bytes from 1.1.1.1: icmp_seq=0 ttl=56 time=12.345 ms"
         let timeout = "Request timeout for icmp_seq 0"

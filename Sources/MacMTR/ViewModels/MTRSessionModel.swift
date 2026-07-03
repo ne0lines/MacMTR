@@ -71,10 +71,19 @@ final class MTRSessionModel: ObservableObject {
 
     private func run(target: String) async {
         do {
-            let route = try await client.traceRoute(to: target, maxHops: maxHops)
-            guard !Task.isCancelled else { return }
+            for try await hop in client.traceRouteHops(to: target, maxHops: maxHops) {
+                guard !Task.isCancelled else { return }
+                appendHopIfNeeded(hop)
+                statusMessage = "Discovered \(reports.count) hops to \(target)..."
+            }
 
-            reports = route.map(HopReport.init)
+            guard !Task.isCancelled else { return }
+            guard !reports.isEmpty else {
+                statusMessage = "No route found for \(target)."
+                isRunning = false
+                return
+            }
+
             statusMessage = "Running \(reports.count) hops to \(target)."
 
             while !Task.isCancelled {
@@ -105,6 +114,11 @@ final class MTRSessionModel: ObservableObject {
     private func record(_ sample: PingSample, forHopID id: Int) {
         guard let index = reports.firstIndex(where: { $0.id == id }) else { return }
         reports[index].record(sample)
+    }
+
+    private func appendHopIfNeeded(_ hop: RouteHop) {
+        guard !reports.contains(where: { $0.id == hop.id }) else { return }
+        reports.append(HopReport(hop: hop))
     }
 
     private func saveReport(extension fileExtension: String, contents: String) {

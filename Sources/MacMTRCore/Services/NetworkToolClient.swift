@@ -13,6 +13,7 @@ public enum NetworkToolError: Error, LocalizedError, Sendable {
 
 public protocol NetworkToolClient: Sendable {
     func traceRoute(to target: String, maxHops: Int) async throws -> [RouteHop]
+    func traceRouteHops(to target: String, maxHops: Int) -> AsyncThrowingStream<RouteHop, Error>
     func ping(address: String, timeoutMilliseconds: Int) async throws -> PingSample
 }
 
@@ -53,6 +54,78 @@ public struct ShellProcessRunner: Sendable {
             )
         }.value
     }
+
+    public func streamLines(
+        executableURL: URL,
+        arguments: [String]
+    ) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { continuation in
+            let process = Process()
+            let stdout = Pipe()
+            let stderr = Pipe()
+            let queue = DispatchQueue(label: "MacMTR.ShellProcessRunner.streamLines")
+            let lineBuffer = LockedLineBuffer()
+            let outputBuffer = LockedStringBuffer()
+
+            process.executableURL = executableURL
+            process.arguments = arguments
+            process.standardOutput = stdout
+            process.standardError = stderr
+
+            let consume: @Sendable (Data) -> Void = { data in
+                guard !data.isEmpty else { return }
+                let text = String(decoding: data, as: UTF8.self)
+                outputBuffer.append(text)
+                queue.async {
+                    for line in lineBuffer.append(text) {
+                        continuation.yield(line)
+                    }
+                }
+            }
+
+            stdout.fileHandleForReading.readabilityHandler = { handle in
+                consume(handle.availableData)
+            }
+            stderr.fileHandleForReading.readabilityHandler = { handle in
+                consume(handle.availableData)
+            }
+
+            process.terminationHandler = { terminatedProcess in
+                stdout.fileHandleForReading.readabilityHandler = nil
+                stderr.fileHandleForReading.readabilityHandler = nil
+
+                queue.async {
+                    if let trailingLine = lineBuffer.flush() {
+                        continuation.yield(trailingLine)
+                    }
+
+                    if terminatedProcess.terminationStatus == 0 || !outputBuffer.value.isEmpty {
+                        continuation.finish()
+                    } else {
+                        continuation.finish(throwing: NetworkToolError.failed(
+                            tool: executableURL.lastPathComponent,
+                            status: terminatedProcess.terminationStatus,
+                            output: outputBuffer.value
+                        ))
+                    }
+                }
+            }
+
+            continuation.onTermination = { _ in
+                stdout.fileHandleForReading.readabilityHandler = nil
+                stderr.fileHandleForReading.readabilityHandler = nil
+                if process.isRunning {
+                    process.terminate()
+                }
+            }
+
+            do {
+                try process.run()
+            } catch {
+                continuation.finish(throwing: error)
+            }
+        }
+    }
 }
 
 public struct MacNetworkToolClient: NetworkToolClient {
@@ -63,21 +136,39 @@ public struct MacNetworkToolClient: NetworkToolClient {
     }
 
     public func traceRoute(to target: String, maxHops: Int) async throws -> [RouteHop] {
-        let output = try await runner.run(
+        var hops: [RouteHop] = []
+
+        for try await hop in traceRouteHops(to: target, maxHops: maxHops) {
+            hops.append(hop)
+        }
+
+        return hops
+    }
+
+    public func traceRouteHops(to target: String, maxHops: Int) -> AsyncThrowingStream<RouteHop, Error> {
+        let lines = runner.streamLines(
             executableURL: URL(fileURLWithPath: "/usr/sbin/traceroute"),
             arguments: ["-n", "-q", "1", "-m", String(maxHops), "-w", "2", target]
         )
 
-        let hops = TracerouteParser.parse(output.combinedOutput)
-        if hops.isEmpty, output.status != 0 {
-            throw NetworkToolError.failed(
-                tool: "traceroute",
-                status: output.status,
-                output: output.combinedOutput
-            )
-        }
+        return AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    for try await line in lines {
+                        if let hop = TracerouteParser.parseLine(line) {
+                            continuation.yield(hop)
+                        }
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
 
-        return hops
+            continuation.onTermination = { _ in
+                task.cancel()
+            }
+        }
     }
 
     public func ping(address: String, timeoutMilliseconds: Int = 1_000) async throws -> PingSample {
@@ -87,5 +178,49 @@ public struct MacNetworkToolClient: NetworkToolClient {
         )
 
         return PingParser.parse(output.combinedOutput)
+    }
+}
+
+private final class LockedLineBuffer: @unchecked Sendable {
+    private var pending = ""
+    private let lock = NSLock()
+
+    func append(_ text: String) -> [String] {
+        lock.withLock {
+            pending += text
+            let parts = pending.split(separator: "\n", omittingEmptySubsequences: false)
+
+            if pending.hasSuffix("\n") {
+                pending = ""
+                return parts.dropLast().map(String.init)
+            }
+
+            pending = parts.last.map(String.init) ?? ""
+            return parts.dropLast().map(String.init)
+        }
+    }
+
+    func flush() -> String? {
+        lock.withLock {
+            guard !pending.isEmpty else { return nil }
+            let line = pending
+            pending = ""
+            return line
+        }
+    }
+}
+
+private final class LockedStringBuffer: @unchecked Sendable {
+    private var storage = ""
+    private let lock = NSLock()
+
+    var value: String {
+        lock.withLock { storage }
+    }
+
+    func append(_ text: String) {
+        lock.withLock {
+            storage += text
+        }
     }
 }
