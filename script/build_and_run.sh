@@ -5,6 +5,8 @@ MODE="${1:-run}"
 APP_NAME="MacMTR"
 BUNDLE_ID="com.ne0lines.MacMTR"
 MIN_SYSTEM_VERSION="14.0"
+APP_VERSION="${APP_VERSION:-1.0}"
+APP_BUILD="${APP_BUILD:-$(git rev-list --count HEAD 2>/dev/null || echo 1)}"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
@@ -15,13 +17,21 @@ APP_RESOURCES="$APP_CONTENTS/Resources"
 APP_BINARY="$APP_MACOS/$APP_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
 APP_ICON_SOURCE="$ROOT_DIR/Resources/AppIcon.icns"
+PACKAGE_ZIP="$DIST_DIR/$APP_NAME-v$APP_VERSION-macOS.zip"
 
 cd "$ROOT_DIR"
 
 pkill -x "$APP_NAME" >/dev/null 2>&1 || true
 
-swift build --product "$APP_NAME"
-BUILD_BINARY="$(swift build --show-bin-path)/$APP_NAME"
+BUILD_ARGUMENTS=(--product "$APP_NAME")
+SHOW_BIN_PATH_ARGUMENTS=()
+if [[ "$MODE" == "--package" || "$MODE" == "package" ]]; then
+  BUILD_ARGUMENTS=(-c release --product "$APP_NAME")
+  SHOW_BIN_PATH_ARGUMENTS=(-c release)
+fi
+
+swift build "${BUILD_ARGUMENTS[@]}"
+BUILD_BINARY="$(swift build "${SHOW_BIN_PATH_ARGUMENTS[@]}" --show-bin-path)/$APP_NAME"
 
 rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_MACOS" "$APP_RESOURCES"
@@ -44,6 +54,10 @@ cat >"$INFO_PLIST" <<PLIST
   <string>$APP_NAME</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>$APP_VERSION</string>
+  <key>CFBundleVersion</key>
+  <string>$APP_BUILD</string>
   <key>LSMinimumSystemVersion</key>
   <string>$MIN_SYSTEM_VERSION</string>
   <key>NSHighResolutionCapable</key>
@@ -78,8 +92,14 @@ case "$MODE" in
     sleep 2
     pgrep -x "$APP_NAME" >/dev/null
     ;;
+  --package|package)
+    rm -f "$PACKAGE_ZIP"
+    codesign --force --deep --sign - "$APP_BUNDLE"
+    ditto -c -k --keepParent "$APP_BUNDLE" "$PACKAGE_ZIP"
+    echo "$PACKAGE_ZIP"
+    ;;
   *)
-    echo "usage: $0 [run|--debug|--logs|--telemetry|--verify]" >&2
+    echo "usage: $0 [run|--debug|--logs|--telemetry|--verify|--package]" >&2
     exit 2
     ;;
 esac
