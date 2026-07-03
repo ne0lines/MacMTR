@@ -14,7 +14,7 @@ and keeps the project under GPL v2.
 - WinMTR-style table: hop, host, address, loss, sent/received, last, average,
   best, and worst latency.
 - Copy text report and export text or HTML reports.
-- macOS app icon derived from the original WinMTR icon.
+- original macOS app icon authored in Icon Composer.
 - Codex Run button support through `script/build_and_run.sh`.
 
 ## Requirements

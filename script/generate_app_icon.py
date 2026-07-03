@@ -2,16 +2,22 @@
 from __future__ import annotations
 
 import math
+import shutil
+import subprocess
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE_ICO = ROOT / "Resources" / "IconSource" / "WinMTR.ico"
 OUTPUT_DIR = ROOT / "Resources"
+ICON_DOCUMENT = OUTPUT_DIR / "MacMTR.icon"
+ICON_DOCUMENT_ASSET = ICON_DOCUMENT / "Assets" / "AppIconForeground.png"
 ICONSET_DIR = OUTPUT_DIR / "AppIcon.iconset"
 MASTER_PNG = OUTPUT_DIR / "AppIcon.png"
+FOREGROUND_PNG = OUTPUT_DIR / "AppIconForeground.png"
+APP_ICON_ICNS = OUTPUT_DIR / "AppIcon.icns"
+ICTOOL = Path("/Applications/Icon Composer.app/Contents/Executables/ictool")
 
 
 ICONSET_SIZES = {
@@ -28,179 +34,149 @@ ICONSET_SIZES = {
 }
 
 
-def load_source_icon() -> Image.Image:
-    image = Image.open(SOURCE_ICO)
-    frames: list[Image.Image] = []
-
-    try:
-        index = 0
-        while True:
-            image.seek(index)
-            frames.append(image.copy().convert("RGBA"))
-            index += 1
-    except EOFError:
-        pass
-
-    return max(frames, key=lambda frame: frame.width * frame.height)
-
-
-def rounded_mask(size: int, radius: int) -> Image.Image:
-    mask = Image.new("L", (size, size), 0)
-    draw = ImageDraw.Draw(mask)
-    draw.rounded_rectangle((0, 0, size, size), radius=radius, fill=255)
-    return mask
-
-
-def draw_background(size: int) -> Image.Image:
+def draw_foreground(size: int = 1024) -> Image.Image:
     image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(image)
-
-    for y in range(size):
-        t = y / (size - 1)
-        r = int(10 + 24 * t)
-        g = int(118 + 70 * (1 - t))
-        b = int(198 + 20 * (1 - t))
-        draw.line((0, y, size, y), fill=(r, g, b, 255))
-
-    grid = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    grid_draw = ImageDraw.Draw(grid)
-    step = size // 8
-    for i in range(1, 8):
-        alpha = 28 if i % 2 else 40
-        x = i * step
-        y = i * step
-        grid_draw.line((x, size * 0.12, x, size * 0.88), fill=(255, 255, 255, alpha), width=max(1, size // 180))
-        grid_draw.line((size * 0.12, y, size * 0.88, y), fill=(255, 255, 255, alpha), width=max(1, size // 180))
-    image.alpha_composite(grid)
-
-    mask = rounded_mask(size, int(size * 0.22))
-    image.putalpha(mask)
-
-    shine = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    shine_draw = ImageDraw.Draw(shine)
-    shine_draw.ellipse(
-        (-size * 0.20, -size * 0.45, size * 1.20, size * 0.92),
-        fill=(255, 255, 255, 38),
-    )
-    shine.putalpha(Image.composite(shine.getchannel("A"), Image.new("L", (size, size), 0), mask))
-    image.alpha_composite(shine)
-
     shadow = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     shadow_draw = ImageDraw.Draw(shadow)
+
+    panel = (
+        int(size * 0.205),
+        int(size * 0.345),
+        int(size * 0.795),
+        int(size * 0.765),
+    )
     shadow_draw.rounded_rectangle(
-        (size * 0.05, size * 0.055, size * 0.95, size * 0.96),
-        radius=int(size * 0.20),
-        outline=(0, 0, 0, 76),
-        width=max(2, size // 42),
+        (panel[0] + size * 0.018, panel[1] + size * 0.035, panel[2] + size * 0.018, panel[3] + size * 0.035),
+        radius=int(size * 0.075),
+        fill=(2, 20, 42, 112),
     )
-    image.alpha_composite(shadow)
+    image.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(size * 0.025)))
 
-    return image
+    panel_img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    panel_draw = ImageDraw.Draw(panel_img)
+    panel_draw.rounded_rectangle(panel, radius=int(size * 0.074), fill=(11, 32, 52, 218))
+    panel_draw.rounded_rectangle(
+        (panel[0] + 4, panel[1] + 4, panel[2] - 4, panel[3] - 4),
+        radius=int(size * 0.066),
+        outline=(255, 255, 255, 56),
+        width=max(3, size // 180),
+    )
+    image.alpha_composite(panel_img)
 
-
-def draw_route_overlay(image: Image.Image) -> None:
-    size = image.width
     draw = ImageDraw.Draw(image)
-    points = [
-        (size * 0.19, size * 0.66),
-        (size * 0.34, size * 0.51),
-        (size * 0.50, size * 0.58),
-        (size * 0.67, size * 0.38),
-        (size * 0.82, size * 0.46),
+    route_points = [
+        (int(size * 0.245), int(size * 0.675)),
+        (int(size * 0.405), int(size * 0.535)),
+        (int(size * 0.565), int(size * 0.595)),
+        (int(size * 0.735), int(size * 0.455)),
     ]
-    points = [(int(x), int(y)) for x, y in points]
 
-    for offset, alpha, width in [(10, 70, size // 30), (0, 255, size // 48)]:
-        shifted = [(x, y + offset) for x, y in points]
-        draw.line(shifted, fill=(255, 70, 80, alpha), width=width, joint="curve")
+    draw.line(route_points, fill=(0, 0, 0, 80), width=max(18, size // 38), joint="curve")
+    draw.line(route_points, fill=(255, 86, 102, 255), width=max(14, size // 48), joint="curve")
+    draw.line(route_points, fill=(255, 180, 112, 170), width=max(5, size // 128), joint="curve")
 
-    radius = max(9, size // 42)
-    for index, (x, y) in enumerate(points):
-        fill = (255, 238, 115, 255) if index in (0, len(points) - 1) else (255, 255, 255, 245)
-        draw.ellipse((x - radius, y - radius, x + radius, y + radius), fill=fill, outline=(75, 22, 28, 170), width=max(2, size // 128))
-
-
-def paste_source_glyph(image: Image.Image, source: Image.Image) -> None:
-    size = image.width
-    glyph_size = int(size * 0.40)
-    glyph = source.resize((glyph_size, glyph_size), Image.Resampling.NEAREST)
-
-    backing = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(backing)
-    cx = size // 2
-    cy = int(size * 0.66)
-    pad = int(size * 0.048)
-    rect = (
-        cx - glyph_size // 2 - pad,
-        cy - glyph_size // 2 - pad,
-        cx + glyph_size // 2 + pad,
-        cy + glyph_size // 2 + pad,
-    )
-    draw.rounded_rectangle(rect, radius=int(size * 0.052), fill=(12, 21, 29, 212))
-    draw.rounded_rectangle(rect, radius=int(size * 0.052), outline=(255, 255, 255, 62), width=max(2, size // 128))
-    backing = backing.filter(ImageFilter.GaussianBlur(radius=0.2))
-    image.alpha_composite(backing)
-    image.alpha_composite(glyph, (cx - glyph_size // 2, cy - glyph_size // 2))
-
-
-def draw_latency_arc(image: Image.Image) -> None:
-    size = image.width
-    draw = ImageDraw.Draw(image)
-    center = (size // 2, int(size * 0.36))
-    radius = int(size * 0.20)
-    line_width = max(8, size // 38)
-
-    for alpha, width_add in [(70, size // 34), (255, 0)]:
-        draw.arc(
-            (
-                center[0] - radius,
-                center[1] - radius,
-                center[0] + radius,
-                center[1] + radius,
-            ),
-            start=205,
-            end=335,
-            fill=(220, 246, 255, alpha),
-            width=line_width + width_add,
+    for index, (x, y) in enumerate(route_points):
+        radius = int(size * (0.047 if index in (0, len(route_points) - 1) else 0.039))
+        draw.ellipse(
+            (x - radius - 5, y - radius + 7, x + radius + 5, y + radius + 17),
+            fill=(0, 0, 0, 74),
+        )
+        fill = (255, 226, 86, 255) if index in (0, len(route_points) - 1) else (236, 250, 255, 255)
+        draw.ellipse((x - radius, y - radius, x + radius, y + radius), fill=fill)
+        draw.ellipse(
+            (x - radius, y - radius, x + radius, y + radius),
+            outline=(79, 21, 36, 190),
+            width=max(5, size // 82),
         )
 
-    needle_angle = math.radians(304)
-    end = (
-        int(center[0] + math.cos(needle_angle) * radius * 0.84),
-        int(center[1] + math.sin(needle_angle) * radius * 0.84),
+    gauge_center = (int(size * 0.50), int(size * 0.365))
+    gauge_radius = int(size * 0.205)
+    arc_box = (
+        gauge_center[0] - gauge_radius,
+        gauge_center[1] - gauge_radius,
+        gauge_center[0] + gauge_radius,
+        gauge_center[1] + gauge_radius,
     )
-    draw.line((center, end), fill=(255, 77, 88, 255), width=max(6, size // 52))
-    hub = max(11, size // 36)
+    draw.arc(arc_box, start=205, end=335, fill=(8, 27, 50, 84), width=max(31, size // 22))
+    draw.arc(arc_box, start=205, end=335, fill=(237, 250, 255, 242), width=max(23, size // 30))
+
+    needle_angle = math.radians(306)
+    needle_end = (
+        int(gauge_center[0] + math.cos(needle_angle) * gauge_radius * 0.82),
+        int(gauge_center[1] + math.sin(needle_angle) * gauge_radius * 0.82),
+    )
+    draw.line((gauge_center, needle_end), fill=(255, 72, 86, 255), width=max(10, size // 64))
+    hub = int(size * 0.034)
     draw.ellipse(
-        (center[0] - hub, center[1] - hub, center[0] + hub, center[1] + hub),
-        fill=(245, 250, 255, 255),
-        outline=(38, 92, 126, 180),
-        width=max(2, size // 170),
+        (gauge_center[0] - hub, gauge_center[1] - hub, gauge_center[0] + hub, gauge_center[1] + hub),
+        fill=(247, 252, 255, 255),
+        outline=(26, 82, 123, 208),
+        width=max(3, size // 128),
+    )
+
+    return image
+
+
+def export_icon_composer_png() -> None:
+    if not ICON_DOCUMENT.exists():
+        raise SystemExit(f"Missing Icon Composer document: {ICON_DOCUMENT}")
+    if not ICTOOL.exists():
+        raise SystemExit(f"Missing Icon Composer export tool: {ICTOOL}")
+
+    subprocess.run(
+        [
+            str(ICTOOL),
+            str(ICON_DOCUMENT),
+            "--export-image",
+            "--output-file",
+            str(MASTER_PNG),
+            "--platform",
+            "macOS",
+            "--rendition",
+            "Default",
+            "--width",
+            "1024",
+            "--height",
+            "1024",
+            "--scale",
+            "1",
+        ],
+        cwd=ROOT,
+        check=True,
     )
 
 
-def make_master() -> Image.Image:
-    source = load_source_icon()
-    image = draw_background(1024)
-    draw_latency_arc(image)
-    draw_route_overlay(image)
-    paste_source_glyph(image, source)
-    return image
+def write_iconset() -> None:
+    if ICONSET_DIR.exists():
+        shutil.rmtree(ICONSET_DIR)
+    ICONSET_DIR.mkdir(parents=True, exist_ok=True)
+
+    master = Image.open(MASTER_PNG).convert("RGBA")
+    for filename, size in ICONSET_SIZES.items():
+        master.resize((size, size), Image.Resampling.LANCZOS).save(ICONSET_DIR / filename)
+
+    subprocess.run(
+        ["iconutil", "-c", "icns", str(ICONSET_DIR), "-o", str(APP_ICON_ICNS)],
+        cwd=ROOT,
+        check=True,
+    )
 
 
 def main() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    ICONSET_DIR.mkdir(parents=True, exist_ok=True)
+    foreground = draw_foreground()
+    foreground.save(FOREGROUND_PNG)
 
-    master = make_master()
-    master.save(MASTER_PNG)
+    if ICON_DOCUMENT_ASSET.exists():
+        shutil.copy2(FOREGROUND_PNG, ICON_DOCUMENT_ASSET)
 
-    for filename, size in ICONSET_SIZES.items():
-        resized = master.resize((size, size), Image.Resampling.LANCZOS)
-        resized.save(ICONSET_DIR / filename)
+    export_icon_composer_png()
+    write_iconset()
 
     print(MASTER_PNG)
-    print(ICONSET_DIR)
+    print(FOREGROUND_PNG)
+    print(ICON_DOCUMENT)
+    print(APP_ICON_ICNS)
 
 
 if __name__ == "__main__":
