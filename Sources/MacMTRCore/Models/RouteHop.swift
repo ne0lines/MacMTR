@@ -1,4 +1,6 @@
 public struct RouteHop: Equatable, Identifiable, Sendable {
+    public static let noResponseHost = "No response from host"
+
     public var id: Int { index }
 
     public let index: Int
@@ -12,6 +14,10 @@ public struct RouteHop: Equatable, Identifiable, Sendable {
     }
 
     public var displayHost: String {
-        hostname ?? address ?? "*"
+        hostname ?? address ?? Self.noResponseHost
+    }
+
+    public var displayAddress: String {
+        address ?? ""
     }
 }

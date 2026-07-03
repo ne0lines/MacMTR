@@ -23,6 +23,7 @@ final class ExportFormatterTests: XCTestCase {
 
         XCTAssertTrue(html.contains("<table>"))
         XCTAssertTrue(html.contains("<td>2</td>"))
-        XCTAssertTrue(html.contains("&ast;"))
+        XCTAssertTrue(html.contains("No response from host"))
+        XCTAssertFalse(html.contains("&ast;"))
     }
 }

@@ -86,15 +86,15 @@ struct ContentView: View {
             }
             .width(45)
 
-            TableColumn("Host") { report in
+            TableColumn("Hostname") { report in
                 Text(report.hop.displayHost)
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
-            .width(min: 170, ideal: 240)
+            .width(min: 190, ideal: 260)
 
             TableColumn("Address") { report in
-                Text(report.hop.address ?? "*")
+                Text(report.hop.displayAddress)
                     .fontDesign(.monospaced)
                     .lineLimit(1)
             }

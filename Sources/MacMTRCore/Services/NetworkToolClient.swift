@@ -149,7 +149,7 @@ public struct MacNetworkToolClient: NetworkToolClient {
     public func traceRouteHops(to target: String, maxHops: Int) -> AsyncThrowingStream<RouteHop, Error> {
         let lines = runner.streamLines(
             executableURL: URL(fileURLWithPath: "/usr/sbin/traceroute"),
-            arguments: ["-n", "-q", "1", "-m", String(maxHops), "-w", "2", target]
+            arguments: ["-q", "1", "-m", String(maxHops), "-w", "2", target]
         )
 
         return AsyncThrowingStream { continuation in

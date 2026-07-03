@@ -6,7 +6,7 @@ public enum ExportFormatter {
             "MacMTR report",
             "Target: \(target)",
             "",
-            "Hop\tHost\tAddress\tLoss%\tSent\tRecv\tLast\tAvg\tBest\tWorst"
+            "Hop\tHostname\tAddress\tLoss%\tSent\tRecv\tLast\tAvg\tBest\tWorst"
         ]
 
         lines.append(contentsOf: reports.map(textRow))
@@ -16,7 +16,7 @@ public enum ExportFormatter {
     public static func html(target: String, reports: [HopReport]) -> String {
         let rows = reports.map { report in
             """
-            <tr><td>\(report.hop.index)</td><td>\(escape(report.hop.displayHost))</td><td>\(escape(report.hop.address ?? "*"))</td><td>\(fixed(report.lossPercent))</td><td>\(report.sent)</td><td>\(report.received)</td><td>\(metric(report.lastMilliseconds))</td><td>\(metric(report.averageMilliseconds))</td><td>\(metric(report.bestMilliseconds))</td><td>\(metric(report.worstMilliseconds))</td></tr>
+            <tr><td>\(report.hop.index)</td><td>\(escape(report.hop.displayHost))</td><td>\(escape(report.hop.displayAddress))</td><td>\(fixed(report.lossPercent))</td><td>\(report.sent)</td><td>\(report.received)</td><td>\(metric(report.lastMilliseconds))</td><td>\(metric(report.averageMilliseconds))</td><td>\(metric(report.bestMilliseconds))</td><td>\(metric(report.worstMilliseconds))</td></tr>
             """
         }.joined(separator: "\n")
 
@@ -37,7 +37,7 @@ public enum ExportFormatter {
         <h1>MacMTR report</h1>
         <p>Target: \(escape(target))</p>
         <table>
-        <thead><tr><th>Hop</th><th>Host</th><th>Address</th><th>Loss%</th><th>Sent</th><th>Recv</th><th>Last</th><th>Avg</th><th>Best</th><th>Worst</th></tr></thead>
+        <thead><tr><th>Hop</th><th>Hostname</th><th>Address</th><th>Loss%</th><th>Sent</th><th>Recv</th><th>Last</th><th>Avg</th><th>Best</th><th>Worst</th></tr></thead>
         <tbody>
         \(rows)
         </tbody>
@@ -51,7 +51,7 @@ public enum ExportFormatter {
         [
             String(report.hop.index),
             report.hop.displayHost,
-            report.hop.address ?? "*",
+            report.hop.displayAddress,
             fixed(report.lossPercent),
             String(report.sent),
             String(report.received),
